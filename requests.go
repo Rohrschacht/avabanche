@@ -106,13 +106,13 @@ func unmarshalResult(data io.ReadCloser) (map[string]json.RawMessage, error) {
 	var responseJSON map[string]json.RawMessage
 	err = json.Unmarshal(buf.Bytes(), &responseJSON)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%v: %s", err, buf.String())
 	}
 
 	var result map[string]json.RawMessage
 	err = json.Unmarshal(responseJSON["result"], &result)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%v: %s", err, buf.String())
 	}
 
 	return result, nil

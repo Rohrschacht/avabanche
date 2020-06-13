@@ -14,6 +14,7 @@ type transaction interface {
 	register(durations chan string)
 	getReader() io.Reader
 	getID() string
+	isReady() bool
 }
 
 type regularTransaction struct {
@@ -25,7 +26,8 @@ type regularTransaction struct {
 
 type sensorTransaction struct {
 	regularTransaction
-	txID string
+	txID     string
+	isReadyM bool
 }
 
 func (rtx *regularTransaction) String() string {
@@ -38,6 +40,9 @@ func (rtx *regularTransaction) getReader() io.Reader {
 
 func (rtx *regularTransaction) getID() string { return "" }
 func (stx *sensorTransaction) getID() string  { return stx.txID }
+
+func (rtx *regularTransaction) isReady() bool { return true }
+func (stx *sensorTransaction) isReady() bool  { return stx.isReadyM }
 
 func (rtx *regularTransaction) register(durations chan string) { /*noop*/ }
 func (stx *sensorTransaction) register(durations chan string) {
@@ -73,6 +78,7 @@ func (stx *sensorTransaction) register(durations chan string) {
 				duration = fmt.Sprintf("%s,%s", duration, <-localdurations)
 			}
 		}
+		stx.isReadyM = true
 		durations <- duration
 	}()
 }

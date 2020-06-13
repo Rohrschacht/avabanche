@@ -13,6 +13,15 @@ import (
 
 var queryAddressesList []string
 
+const (
+	modeFinal = iota
+	modeCreat
+	modeInitU
+	modeBurst
+)
+
+var mode = modeFinal
+
 func main() {
 	// flags
 	numtxs := flag.UintP("num", "n", 10, "number of generated transactions")
@@ -34,6 +43,11 @@ func main() {
 
 	oneway := flag.BoolP("oneway", "1", false, "tokens will only be sent from address1 to address2 and not back")
 
+	modeflag := flag.StringP("mode", "m", "finalization", "set the benchmark mode to: finalization, createusers, initusers or burst")
+
+	numusers := flag.Uint("numusers", 0, "number of users to create in createusers mode")
+	usersfile := flag.String("usersfile", "", "file containing the user information for createusers, initusers and burst mode")
+
 	flag.Parse()
 
 	sensorEveryExplicit := false
@@ -44,20 +58,55 @@ func main() {
 		}
 	})
 
-	fmt.Printf("%d\n%d\n%f\n%d\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%t\n%s\n%t\n", *numtxs, *sensorEvery, *sensorRate, *amount, *address1, *address2, *username1, *pass1, *username2, *pass2, *outFileName, sensorEveryExplicit, *queryAddresses, *oneway)
+	// fmt.Printf("%d\n%d\n%f\n%d\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%t\n%s\n%t\n%s\n", *numtxs, *sensorEvery, *sensorRate, *amount, *address1, *address2, *username1, *pass1, *username2, *pass2, *outFileName, sensorEveryExplicit, *queryAddresses, *oneway, *modeflag)
 
 	// sanity checks
-	if *address1 == "" || *address2 == "" {
+	modeoptions := map[string]bool{
+		"finalization": true,
+		"createusers":  true,
+		"initusers":    true,
+		"burst":        true,
+	}
+	if !modeoptions[*modeflag] {
+		fmt.Fprintf(os.Stderr, "Mode should be one of: finalization, createusers or burst!\n")
+		os.Exit(1)
+	}
+	if *modeflag == "finalization" {
+		mode = modeFinal
+	}
+	if *modeflag == "createusers" {
+		mode = modeCreat
+	}
+	if *modeflag == "initusers" {
+		mode = modeInitU
+	}
+	if *modeflag == "burst" {
+		mode = modeBurst
+	}
+
+	if mode == modeCreat {
+		createUsers(*numusers, *usersfile)
+	}
+	if mode == modeInitU {
+		initUsers(*usersfile)
+	}
+
+	if mode == modeBurst && *usersfile == "" {
+		fmt.Fprintf(os.Stderr, "Cannot run burst mode without a usersfile!\n")
+		os.Exit(1)
+	}
+
+	if mode == modeFinal && (*address1 == "" || *address2 == "") {
 		fmt.Fprintf(os.Stderr, "Please specify the two addresses to use for the transactions!\n")
 		os.Exit(1)
 	}
 
-	if *username1 == "" || *pass1 == "" {
+	if mode == modeFinal && (*username1 == "" || *pass1 == "") {
 		fmt.Fprintf(os.Stderr, "Please specify user and password for address1!\n")
 		os.Exit(1)
 	}
 
-	if *username2 == "" && *pass2 == "" {
+	if mode == modeFinal && (*username2 == "" && *pass2 == "") {
 		*oneway = true
 	} else if !*oneway {
 		fmt.Fprintf(os.Stderr, "Please specify the username and password for address2!\n")
@@ -81,8 +130,9 @@ func main() {
 	if *sensorRate != 0 && !sensorEveryExplicit {
 		*sensorEvery = uint(float64(*numtxs) * *sensorRate)
 	}
-	numsensors := int(math.Ceil(float64(*numtxs) / float64(*sensorEvery)))
+	numsensors := uint(math.Ceil(float64(*numtxs) / float64(*sensorEvery)))
 	durations := make(chan string, numsensors)
+	users := loadUsers(*usersfile)
 
 	outputfunc := func(str string) { fmt.Println(str) }
 	if *outFileName != "" {
@@ -97,39 +147,47 @@ func main() {
 		defer writer.Flush()
 	}
 
-	balance, err := getBalance(*address1)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Could not get balance for %s: %v\n", *address1, err)
-		os.Exit(2)
-	}
+	if mode == modeFinal {
+		balance, err := getBalance(*address1)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Could not get balance for %s: %v\n", *address1, err)
+			os.Exit(2)
+		}
 
-	if *oneway && balance < uint64(*numtxs**amount) {
-		fmt.Fprintf(os.Stderr, "It seems your account has insufficient funds: %d < %d * %d\n", balance, *numtxs, *amount)
-		os.Exit(2)
-	} else if !*oneway && balance < uint64(*numtxs**amount/2) {
-		fmt.Fprintf(os.Stderr, "It seems your account has insufficient funds: %d < %d * %d/2\n", balance, *numtxs, *amount)
-		os.Exit(2)
+		if *oneway && balance < uint64(*numtxs**amount) {
+			fmt.Fprintf(os.Stderr, "It seems your account has insufficient funds: %d < %d * %d\n", balance, *numtxs, *amount)
+			os.Exit(2)
+		} else if !*oneway && balance < uint64(*numtxs**amount/2) {
+			fmt.Fprintf(os.Stderr, "It seems your account has insufficient funds: %d < %d * %d/2\n", balance, *numtxs, *amount)
+			os.Exit(2)
+		}
+
+		*sensorEvery = 1
+		numsensors = *numtxs
 	}
 
 	outputfunc(fmt.Sprintf("BEGIN,%s,%d", time.Now().Format(time.RFC3339Nano), *numtxs))
 
 	go func() {
-		factory1to2 := transactionFactory{amount: *amount, to: *address2, user: user1}
-		factory2to1 := transactionFactory{amount: *amount, to: *address1, user: user2}
+		var factory transactionFactory
+		if mode == modeFinal {
+			factory = transactionFactory{amount: *amount, to: *address2, user: user1}
+		}
 		for i := uint(0); i < *numtxs; i++ {
+			if mode == modeBurst {
+				factory = transactionFactory{amount: *amount, to: users[i+1]["address"], user: users[i]}
+			}
+
+			if mode == modeFinal && !*oneway && i > (*numtxs/2) {
+				factory.to = *address1
+				factory.user = user2
+			}
+
 			var tx transaction
 			if i%*sensorEvery == 0 {
-				if !*oneway && i > (*numtxs/2) {
-					tx = factory2to1.newSensorTransaction(i)
-				} else {
-					tx = factory1to2.newSensorTransaction(i)
-				}
+				tx = factory.newSensorTransaction(i)
 			} else {
-				if !*oneway && i > (*numtxs/2) {
-					tx = factory2to1.newRegularTransaction(i)
-				} else {
-					tx = factory1to2.newRegularTransaction(i)
-				}
+				tx = factory.newRegularTransaction(i)
 			}
 
 			err := sendTx(tx)
@@ -150,10 +208,16 @@ func main() {
 			}
 
 			tx.register(durations)
+
+			if mode == modeFinal {
+				for !tx.isReady() {
+					time.Sleep(100 * time.Millisecond)
+				}
+			}
 		}
 	}()
 
-	for i := 0; i < numsensors; i++ {
+	for i := uint(0); i < numsensors; i++ {
 		duration := <-durations
 		outputfunc(duration)
 	}
