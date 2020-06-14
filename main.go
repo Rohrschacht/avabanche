@@ -143,8 +143,10 @@ func main() {
 		}
 		defer outfile.Close()
 		writer := bufio.NewWriter(outfile)
-		outputfunc = func(str string) { writer.WriteString(fmt.Sprintf("%s\n", str)) }
-		defer writer.Flush()
+		outputfunc = func(str string) {
+			writer.WriteString(fmt.Sprintf("%s\n", str))
+			writer.Flush()
+		}
 	}
 
 	if mode == modeFinal {
