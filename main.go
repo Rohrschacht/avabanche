@@ -17,6 +17,7 @@ const (
 	modeFinal = iota
 	modeCreat
 	modeInitU
+	modeFauce
 	modeBurst
 )
 
@@ -43,10 +44,10 @@ func main() {
 
 	oneway := flag.BoolP("oneway", "1", false, "tokens will only be sent from address1 to address2 and not back")
 
-	modeflag := flag.StringP("mode", "m", "finalization", "set the benchmark mode to: finalization, createusers, initusers or burst")
+	modeflag := flag.StringP("mode", "m", "finalization", "set the benchmark mode to: finalization, createusers, initusers, faucetusers or burst")
 
 	numusers := flag.Uint("numusers", 0, "number of users to create in createusers mode")
-	usersfile := flag.String("usersfile", "", "file containing the user information for createusers, initusers and burst mode")
+	usersfile := flag.String("usersfile", "", "file containing the user information for createusers, initusers, faucetusers and burst mode")
 
 	flag.Parse()
 
@@ -72,6 +73,7 @@ func main() {
 		"finalization": true,
 		"createusers":  true,
 		"initusers":    true,
+		"faucetusers":  true,
 		"burst":        true,
 	}
 	if !modeoptions[*modeflag] {
@@ -86,6 +88,9 @@ func main() {
 	}
 	if *modeflag == "initusers" {
 		mode = modeInitU
+	}
+	if *modeflag == "faucetusers" {
+		mode = modeFauce
 	}
 	if *modeflag == "burst" {
 		mode = modeBurst
@@ -111,6 +116,21 @@ func main() {
 		}
 
 		initUsers(*usersfile)
+		os.Exit(0)
+	}
+	if mode == modeFauce {
+		if *usersfile == "" {
+			fmt.Fprintf(os.Stderr, "Please specify location of usersfile!\n")
+			os.Exit(1)
+		}
+
+		if *username1 == "" || *pass1 == "" || *address1 == "" {
+			fmt.Fprintf(os.Stderr, "Please specify address, username and password to faucet from!\n")
+			os.Exit(1)
+		}
+		u := user{"name": *username1, "pass": *pass1, "address": *address1}
+
+		faucetUsers(*usersfile, *amount, u)
 		os.Exit(0)
 	}
 
@@ -204,7 +224,11 @@ func main() {
 		}
 		for i := uint(0); i < *numtxs; i++ {
 			if mode == modeBurst {
-				factory = transactionFactory{amount: *amount, to: users[i+1]["address"], user: users[i]}
+				if i+1 < *numtxs {
+					factory = transactionFactory{amount: *amount, to: users[i+1]["address"], user: users[i]}
+				} else { // user needs to wrap around at the end
+					factory = transactionFactory{amount: *amount, to: users[0]["address"], user: users[i]}
+				}
 			}
 
 			if mode == modeFinal && !*oneway && i > (*numtxs/2) {

@@ -79,6 +79,58 @@ func initUsers(usersfile string) {
 	}
 }
 
+func faucetUsers(usersfile string, amount uint, u user) {
+	users := loadUsers(usersfile)
+
+	for _, ur := range users {
+		if ur["address"] == "" {
+			fmt.Fprintf(os.Stderr, "There are uninitialized users in the usersfile!\n")
+			os.Exit(4)
+		}
+	}
+
+	balance, err := getBalance(u["address"])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not get balance for %s: %v\n", u["address"], err)
+		os.Exit(2)
+	}
+
+	if uint64(uint(len(users))*amount) > balance {
+		fmt.Fprintf(os.Stderr, "Address does not have enough funds: %d * %d > %d!\n", len(users), amount, balance)
+		os.Exit(2)
+	}
+
+	factory := transactionFactory{amount: amount, user: u}
+	durations := make(chan string, len(users))
+
+	for i, ur := range users {
+		factory.to = ur["address"]
+		tx := factory.newSensorTransaction(uint(i))
+
+		err := sendTx(tx)
+		if err != nil {
+			wentThrough := false
+			for k := 0; k < 5; k++ {
+				fmt.Fprintf(os.Stderr, "Could not send transaction: %v. Retrying...\n", err)
+				err = sendTx(tx)
+				if err == nil {
+					wentThrough = true
+					break
+				}
+			}
+			if !wentThrough {
+				fmt.Fprintf(os.Stderr, "Sending a transaction failed 5 times. Aborting!\n")
+				os.Exit(3)
+			}
+		}
+
+		tx.register(durations)
+		for !tx.isReady() {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
 func loadUsers(usersfile string) []user {
 	file, err := os.OpenFile(usersfile, os.O_RDONLY|os.O_CREATE, 0644)
 	if err != nil {
