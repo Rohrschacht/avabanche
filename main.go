@@ -28,7 +28,7 @@ func main() {
 	sensorEvery := flag.UintP("sensor-every", "e", 5, "send a sensor transaction every N transactions")
 	sensorRate := flag.Float64P("sensor-rate", "r", 0, "fraction between 0 and 1. determines the fraction of transactions that are sensors. in conflict with 'sensor-every'. if that is set explicitly, 'sensor-rate' will be ignored")
 
-	amount := flag.UintP("amount", "a", 10, "amount of nAVA to be sent per transaction")
+	amount := flag.UintP("amount", "a", 1, "amount of nAVA to be sent per transaction")
 	address1 := flag.StringP("address1", "x", "", "one of the addresses involved in the transactions")
 	address2 := flag.StringP("address2", "y", "", "one of the addresses involved in the transactions")
 
@@ -129,11 +129,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if mode == modeFinal && (*username2 == "" && *pass2 == "") {
-		*oneway = true
-	} else if !*oneway {
-		fmt.Fprintf(os.Stderr, "Please specify the username and password for address2!\n")
-		os.Exit(1)
+	if mode == modeFinal {
+		if *username2 == "" && *pass2 == "" {
+			*oneway = true
+		} else if !*oneway {
+			fmt.Fprintf(os.Stderr, "Please specify the username and password for address2!\n")
+			os.Exit(1)
+		}
 	}
 
 	if *sensorRate < 0 || *sensorRate > 1 {
@@ -149,7 +151,15 @@ func main() {
 	}
 	numsensors := uint(math.Ceil(float64(*numtxs) / float64(*sensorEvery)))
 	durations := make(chan string, numsensors)
-	users := loadUsers(*usersfile)
+	users := []user{}
+	if mode == modeBurst {
+		users = loadUsers(*usersfile)
+	}
+
+	if mode == modeBurst && uint(len(users)) < *numtxs {
+		fmt.Fprintf(os.Stderr, "There are not enough users in usersfile to create the desired number of burst transactions: %d < %d!\n", len(users), *numtxs)
+		os.Exit(1)
+	}
 
 	outputfunc := func(str string) { fmt.Println(str) }
 	if *outFileName != "" {
