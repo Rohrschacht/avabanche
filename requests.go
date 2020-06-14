@@ -95,6 +95,54 @@ func getTxStatus(tx transaction, queryAddress string) (string, error) {
 	return status, nil
 }
 
+func createUser(u user) (bool, error) {
+	response, err := sendRequest(queryAddressesList[0], "/ext/keystore", strings.NewReader(fmt.Sprintf("{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"keystore.createUser\", \"params\": {\"username\": \"%s\", \"password\": \"%s\"}}\n", u["name"], u["pass"])))
+	if err != nil {
+		return false, err
+	}
+
+	if response.StatusCode != 200 {
+		return false, fmt.Errorf("node returned status code: %d when trying to create user", response.StatusCode)
+	}
+
+	result, err := unmarshalResult(response.Body)
+	if err != nil {
+		return false, err
+	}
+
+	var success bool
+	err = json.Unmarshal(result["success"], &success)
+	if err != nil {
+		return false, err
+	}
+
+	return success, nil
+}
+
+func createAddress(u user) (string, error) {
+	response, err := sendRequest(queryAddressesList[0], "/ext/bc/X", strings.NewReader(fmt.Sprintf("{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"avm.createAddress\", \"params\": {\"username\": \"%s\", \"password\": \"%s\"}}\n", u["name"], u["pass"])))
+	if err != nil {
+		return "", err
+	}
+
+	if response.StatusCode != 200 {
+		return "", fmt.Errorf("node returned status code: %d when trying to create address", response.StatusCode)
+	}
+
+	result, err := unmarshalResult(response.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var address string
+	err = json.Unmarshal(result["address"], &address)
+	if err != nil {
+		return "", err
+	}
+
+	return address, nil
+}
+
 func unmarshalResult(data io.ReadCloser) (map[string]json.RawMessage, error) {
 	buf := new(bytes.Buffer)
 	_, err := buf.ReadFrom(data)

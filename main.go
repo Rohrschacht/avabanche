@@ -61,6 +61,13 @@ func main() {
 	// fmt.Printf("%d\n%d\n%f\n%d\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%t\n%s\n%t\n%s\n", *numtxs, *sensorEvery, *sensorRate, *amount, *address1, *address2, *username1, *pass1, *username2, *pass2, *outFileName, sensorEveryExplicit, *queryAddresses, *oneway, *modeflag)
 
 	// sanity checks
+	if !strings.Contains(*queryAddresses, ":") {
+		fmt.Fprintf(os.Stderr, "Please specify at least one node address with port like this: -q 127.0.0.1:9650\n")
+		os.Exit(1)
+	}
+
+	queryAddressesList = strings.Split(*queryAddresses, ",")
+
 	modeoptions := map[string]bool{
 		"finalization": true,
 		"createusers":  true,
@@ -85,10 +92,26 @@ func main() {
 	}
 
 	if mode == modeCreat {
-		createUsers(*numusers, *usersfile)
+		if *numusers == 0 {
+			fmt.Fprintf(os.Stderr, "Please specify desired number of users!\n")
+			os.Exit(1)
+		}
+		if *usersfile == "" {
+			fmt.Fprintf(os.Stderr, "Please specify location of usersfile!\n")
+			os.Exit(1)
+		}
+
+		generateUsers(*numusers, *usersfile)
+		os.Exit(0)
 	}
 	if mode == modeInitU {
+		if *usersfile == "" {
+			fmt.Fprintf(os.Stderr, "Please specify location of usersfile!\n")
+			os.Exit(1)
+		}
+
 		initUsers(*usersfile)
+		os.Exit(0)
 	}
 
 	if mode == modeBurst && *usersfile == "" {
@@ -118,13 +141,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if !strings.Contains(*queryAddresses, ":") {
-		fmt.Fprintf(os.Stderr, "Please specify at least one node address with port like this: -q 127.0.0.1:9650\n")
-		os.Exit(1)
-	}
-
 	// logic
-	queryAddressesList = strings.Split(*queryAddresses, ",")
 	user1 := user{"name": *username1, "pass": *pass1}
 	user2 := user{"name": *username2, "pass": *pass2}
 	if *sensorRate != 0 && !sensorEveryExplicit {
