@@ -52,6 +52,7 @@ func (stx *sensorTransaction) register(durations chan string) {
 
 	for i := 0; i < len(queryAddressesList); i++ {
 		go func(iCopy int) {
+			numCurls := 0
 			for true {
 				status, err := getTxStatus(stx, queryAddressesList[iCopy])
 				if err != nil {
@@ -59,9 +60,10 @@ func (stx *sensorTransaction) register(durations chan string) {
 					localdurations <- "ERR"
 					break
 				}
+				numCurls++
 				if status == "Accepted" || status == "Rejected" {
 					end := time.Now()
-					localdurations <- fmt.Sprintf("%s,%f", status, end.Sub(start).Seconds())
+					localdurations <- fmt.Sprintf("%s,%d,%f", status, numCurls, end.Sub(start).Seconds())
 					break
 				}
 			}
